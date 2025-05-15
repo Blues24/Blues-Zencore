@@ -1,81 +1,68 @@
 import os
 import tarfile
-import time
-import json 
 import subprocess
-import hashlib
-from datetime import datetime
-from backup.fuzzer import get_all_files
-from backup.utils import print_info, print_error, print_success, print_warning
-from backup.state import has_changed_since_last_backup, save_state
-from tqdm import tqdm
+import zipfile
+import zstandard as zstd 
+from Zencore.utils import ConsoleTemplate
 
-def generate_checksum(file_path):
-    sha256checksum = hashlib.sha256()
-    with open(file_path, "rb") as file:
-        for chunk in iter(lambda: file.read(8192), b""):
-            sha256checksum.update(chunk)
-    return sha256checksum.hexdigest()
+class Archiver:
+     def __init__(self, source, destination, archive_name, algorithm):
+        self.source = source
+        self.destination = destination
+        self.archive_name = archive_name
+        self.algorithm = algorithm.lower()
+        self.supported_algorithms = ["tar.gz", "tar.zst", "zip"]
+        self.archive_path = os.path.join(destination, f"{archive_name}.{self._get_extension()}")  # path disimpan
+        self.compress()
+     def compress(self):
+        archive_path = os.path.join(self.destination, f"{self.archive_name}.{self._get_extension()}")
+        ConsoleTemplate.print_info(f"Menggunakan algoritma kompresi: {self.algorithm}")
+        if self.algorithm == "tar.gz":
+            self._compress_tar_gz(self.source, archive_path)
+        elif self.algorithm == "tar.zst":
+            self._compress_tar_zst(self.source, archive_path)
+        elif self.algorithm == "zip":
+            self._compress_zip(self.source, archive_path)
+        else:
+            ConsoleTemplate.print_error(f"Algoritma tidak didukung: {self.algorithm}")
+            raise ValueError(f"Unsupported compression algorithm: {self.algorithm}")
+        return archive_path
 
-def save_checksum_file(file_path, checksum):
-    checksum_path = file_path + ".sha256"
-    with open(checksum_path, "w") as f:
-        f.write(f"{checksum} {os.path.basename(file_path)}\n")
-    return checksum_path
+     def _compress_tar_gz(self, source_path, archive_path):
+        with tarfile.open(archive_path, "w:gz") as tar:
+            for root, _, files in os.walk(source_path):
+                for file in ConsoleTemplate.loading_bar("GZIP Compressing", files):
+                    full_path = os.path.join(root, file)
+                    arcname = os.path.relpath(full_path, start=source_path)
+                    tar.add(full_path, arcname=arcname)
 
-def verify_checksum(file_path, expected_checksum):
-    actual_checksum = generate_checksum(file_path)
-    return actual_checksum == expected_checksum
+     def _compress_tar_zst(self, source_path, archive_path):
+        cctx = zstd.ZstdCompressor()
+        with open(archive_path, "wb") as zst_file:
+            with cctx.stream_writer(zst_file) as compressor:
+                with tarfile.open(fileobj=compressor, mode="w|") as tar:
+                    for root, _, files in os.walk(source_path):
+                        for file in ConsoleTemplate.loading_bar("ZSTD Compressing", files):
+                            full_path = os.path.join(root, file)
+                            arcname = os.path.relpath(full_path, start=source_path)
+                            tar.add(full_path, arcname=arcname)
 
-def compress_Music(source_Dir, destination_Dir, state_file):
-    if not os.path.isdir(source_Dir):
-        print_error("Folder sumber tidak valid.")
-        return
+     def _compress_zip(self, source_path, archive_path):
+        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for root, _, files in os.walk(source_path):
+                for file in ConsoleTemplate.loading_bar("ZIP Compressing", files):
+                    full_path = os.path.join(root, file)
+                    arcname = os.path.relpath(full_path, start=source_path)
+                    zipf.write(full_path, arcname=arcname)
 
-    if not os.path.isdir(destination_Dir):
-        print_error("Folder backup tidak valid")
-        return
-
-    # Cek apakah ada perubahan file dari backup sebelumnya ada atau tidak ada 
-    if not has_changed_since_last_backup(source_Dir, state_file):
-        backup_name = f"{datetime.now().strftime(`%dd%mm%YY_%HH_%MM%SS`)}_Music_Backup.tar.zst"
-        backup_path = os.path.join(destination_Dir, backup_name)
-        if os.path.exists(backup_path):
-            print_info("Tidak ada perubahan sejak backup terakhir. Lewati backup.")
-            return
-
-        print_info("Menyiapkan pembuatan arsip")
-
-        all_files = get_all_files(source_Dir)
-        total_files = len(all_files)
-        backup_name = f"{datetime.now().strftime(`%dd%mm%YY_%HH%MM%SS`)}_Music_Backup.tar.zst"
-        output_path = os.path.join(destination_Dir, backup_name)
-
-        try:
-            with tarfile.open(output_path, "w|") as tar, tqdm(total=total_files, desc="📦 Mengarsip", unit="file") as pbar:
-                for file_path in all_files:
-                    arcname = os.path.relpath(file_path, source_Dir)
-                    tar.add(file_path, arcname=arcname)
-                    pbar.update(1)
-
-            # Kompress lagi dengan zstd 
-            os.system(f"zstd --rm {output_path}")
-
-            # Tambahkan arsip .zst ke path baru 
-            zst_path = output_path + ".zst"
-
-            # Buat checksum dan simpan checksum
-            checksum = generate_checksum(zst_path)
-            save_checksum_file(zst_path, checksum)
-
-            print_success(f"[✓] SHA-256 Arsip: {checksum}")
-            if verify_checksum(zst_path, checksum):
-                print_success("[✓] Verifikasi checksum berhasil!")
-            else:
-                print_warning("[!] Verifikasi checksum GAGAL!")
-
-            save_state(source_Dir, state_file)
-            print_success("Backup selesasi dan state tersimpan.")
-        except Exception as e:
-            print_error(f"Gagal saat pembuatan arsip karena: {e}")
-
+     def _get_extension(self):
+        if self.algorithm == "tar.gz":
+            return "tar.gz"
+        elif self.algorithm == "tar.zst":
+            return "tar.zst"
+        elif self.algorithm == "zip":
+            return "zip"
+        else:
+            return "archive"
+     def get_archive_path(self):
+        return self.archive_path        

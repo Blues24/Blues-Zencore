@@ -1,37 +1,69 @@
-import os
-import pyfiglet
-from backup.fuzzer import find_folders, fuzzy_select
-from backup.compress import compress_Music
-from backup.upload import upload_drive
-from backup.utils import print_info, print_error, print_success, print_warning
+from Zencore.utils import ConsoleTemplate
+from Zencore.fuzzer import Fuzzer
+from Zencore.compress import Archiver
+from Zencore.createPassword import Security, Checker
+from InquirerPy import inquirer
+import argparse
+import os, sys
 
+def get_args():
+    parser = argparse.ArgumentParser(description="Blues Zencore - Backup utility")
+    parser.add_argument("source", nargs="?", help="Folder yang ingin di-backup")
+    parser.add_argument("destination", nargs="?", help="Folder tujuan backup")
+    return parser.parse_args()
 
-def Banner():
-    fig = Figlet(font=`slant`)
-    print_info(f.renderText("Blues Zencore"))
+def select_folder_path(name: str, target: str):
+    fuzzer = Fuzzer()
+    all_path = fuzzer. find_target(os.path.expanduser("~"), target)
+    if not all_path:
+        ConsoleTemplate.print_error(f"Sorry, folder not found!")
+        sys.exit(1)
+    
+    return inquirer.fuzzy(
+        message=f"choose a folder for {name}",
+        choices=all_path
+    ).execute()
 
 def main():
-    # Clear the terminal
-    os.system("clear")
-    Banner()
+    ConsoleTemplate.show_banner()
+    args = get_args()
 
-    print_info("Mencari folder Music dan backups di rumah kamu")
-    music_dirs = find_folders("/home", "Music")
-    backup_dirs = find_folders("/home", "Backups")
-    
-    if not music_dirs:
-        print_error("Folder Music tidak ditemukan")
+    source = args.source if args.source and os.path.isdir(args.source) else select_folder_path("source", "Music")
+    destination = args.destination if args.destination and os.path.isdir(args.destination) else select_folder_path("tujuan", "Backups")
+
+    archive_name = inquirer.text(message="📝 Nama arsip backup:").execute()
+    algorithm = inquirer.select(
+        message="📦 Pilih algoritma kompresi:",
+        choices=["tar.zst", "tar.gz", "zip", "7z"]
+    ).execute()
+
+    use_password = inquirer.confirm(message="🔐 Apakah ingin mengenkripsi arsip dengan password?", default=False).execute()
+    password = None
+    if use_password:
+        password = inquirer.secret(message="Masukkan password:").execute()
+
+    # 🔍 FUZZER
+    fuzzer = Fuzzer()
+    file_list = fuzzer.get_all_files(source)
+
+    if not file_list:
+        ConsoleTemplate.print_warning("Tidak ada file yang ditemukan untuk dibackup.")
         return
-    if not backup_dirs:
-        print_error("Folder Backups tidak ditemukan")
-        return 
-    
-    source_dir, backup_dir = fuzzy_select(music_dirs, backup_dirs)
 
-    # Config state file 
-    state_file = os.path.expanduser("~/.config/blues_zencore/backup_state.json")
-    
-    compress_Music(source_dir, backup_dir, state_file)
+    # 📦 COMPRESS
+    compressor = Archiver(source, destination, archive_name, algorithm)
+    archive_path = compressor.get_archive_path()
+    # 🔐 ENCRYPT
+    if use_password:
+        encryptor = Security(password)
+        encryptor.encrypt_file(archive_path)
+
+    # ✅ VERIFY didn't work because didn't generate original hashhhh
+    #verifier = Checker()
+    #verifier.verify_hash(archive_path)
+
+    ConsoleTemplate.thank_you()
+
 
 if __name__ == "__main__":
     main()
