@@ -1,81 +1,120 @@
 import os
 import tarfile
-import time
-import json 
 import subprocess
+import zipfile
 import hashlib
+import zstandard as zstd
+
 from datetime import datetime
-from backup.fuzzer import get_all_files
-from backup.utils import print_info, print_error, print_success, print_warning
-from backup.state import has_changed_since_last_backup, save_state
-from tqdm import tqdm
+from Zencore.utils import Logger as log, LoadingTime  # Comming soon
 
-def generate_checksum(file_path):
-    sha256checksum = hashlib.sha256()
-    with open(file_path, "rb") as file:
-        for chunk in iter(lambda: file.read(8192), b""):
-            sha256checksum.update(chunk)
-    return sha256checksum.hexdigest()
 
-def save_checksum_file(file_path, checksum):
-    checksum_path = file_path + ".sha256"
-    with open(checksum_path, "w") as f:
-        f.write(f"{checksum} {os.path.basename(file_path)}\n")
-    return checksum_path
+class Compressor:
+    def __init__(self, source_folder: str, destination_folder: str, algorithm: str):
+        self.source_folder = source_folder
+        self.destination_folder = destination_folder
+        self.algorithm = algorithm
+        self.archive_path = None
+        self.checksum = None
 
-def verify_checksum(file_path, expected_checksum):
-    actual_checksum = generate_checksum(file_path)
-    return actual_checksum == expected_checksum
+    def generate_archive(self):
+        base = os.path.basename(os.path.abspath(self.source_folder))
+        timestamp_data = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ext = {
+            "tar.zst": ".tar.zst",
+            "zip": ".zip",
+            "tar.gz": ".tar.gz",
+            "7zip": ".7z"
+        }.get(self.algorithm, ".archive")
+        self.archive_path = os.path.join(
+            self.destination_folder, base + "_", + timestamp_data, + ext)
 
-def compress_Music(source_Dir, destination_Dir, state_file):
-    if not os.path.isdir(source_Dir):
-        print_error("Folder sumber tidak valid.")
-        return
+    def compress(self):
+        self.generate_archive()
+        log.info(f"mengompress {self.source_folder} ke {
+                 self.archive_path} menggunakan {self.algorithm}")
 
-    if not os.path.isdir(destination_Dir):
-        print_error("Folder backup tidak valid")
-        return
-
-    # Cek apakah ada perubahan file dari backup sebelumnya ada atau tidak ada 
-    if not has_changed_since_last_backup(source_Dir, state_file):
-        backup_name = f"{datetime.now().strftime(`%dd%mm%YY_%HH_%MM%SS`)}_Music_Backup.tar.zst"
-        backup_path = os.path.join(destination_Dir, backup_name)
-        if os.path.exists(backup_path):
-            print_info("Tidak ada perubahan sejak backup terakhir. Lewati backup.")
+        if self.algorithm == "tar.zst":
+            self._compress_zstd()
+        elif self.algorithm == "tar.gz":
+            self._compress_gzip()
+        elif self.algorithm == "zip":
+            self._zip()
+        elif self.algorithm == "7zip":
+            self._compress_7zip()
+        else:
+            log.error("Tidak dapat menemukan algorithma yang kamu mau")
             return
 
-        print_info("Menyiapkan pembuatan arsip")
+        self.generate_checksum()
 
-        all_files = get_all_files(source_Dir)
-        total_files = len(all_files)
-        backup_name = f"{datetime.now().strftime(`%dd%mm%YY_%HH%MM%SS`)}_Music_Backup.tar.zst"
-        output_path = os.path.join(destination_Dir, backup_name)
+    def _compress_zstd(self):
+        cctx = zstd.ZstdCompressor()
+        with open(self.archive_path, "wb") as f_out:
+            with cctx.stream_writer(f_out) as compressor:
+                with tarfile.open(fileobj=compressor, mode="w|") as tar:
+                    total_files = sum(
+                        [len(files)
+                            for _, _, files in os.walk(self.source_folder)])
+                    loadingBar = LoadingTime.create_bar(total_files,
+                                                        desc="📦 Mengarsipkan",
+                                                        ncols=70,
+                                                        unit="file")
+                    for root, _, files in os.walk(self.source_folder):
 
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            arcname = os.path.relpath(
+                                file_path, self.source_folder)
+
+                            try:
+                                tar.add(file_path, arcname=arcname)
+                            except Exception as err:
+                                log.warning(f"Gagal menambahkan {
+                                            file_path}: {err}")
+
+                            loadingBar.update(1)
+                    loadingBar.close()
+                log.success("Berhasil membuat arsip dengan zstandard")
+
+    def _zip(self):
+        with zipfile.ZipFile(self.archive_path, "w", zipfile.ZIP_DEFLATED) as zipfw:
+            total_files = sum([len(files) for _, _, files in os.walk(self.source_folder)])
+            bar = LoadingTime.create_bar(total_files, desc="📦 Mengarsipkan", ncols=70, unit="file")
+            for root, _, files in os.walk(self.source_folder):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, self.source_folder)
+                    try:
+                        zipfw.write(file_path, arcname)
+                    except Exception as e:
+                        log.warning(f"Gagal menambahkan {file_path}: {e}")
+                    bar.update(1)
+            bar.close()
+    def _compress_7zip(self):
+        log.info("Menggunakan algoritma 7z")
+        command = ["7z", "a", self.archive_path, self.source_folder]
         try:
-            with tarfile.open(output_path, "w|") as tar, tqdm(total=total_files, desc="📦 Mengarsip", unit="file") as pbar:
-                for file_path in all_files:
-                    arcname = os.path.relpath(file_path, source_Dir)
-                    tar.add(file_path, arcname=arcname)
-                    pbar.update(1)
+            subprocess.run(command, check=True)
+            log.success("Kompresi dengan 7z selesai.")
+        except FileNotFoundError:
+            log.error(
+                "Perintah '7z' tidak ditemukan. Pastikan 7zip telah terinstal.")
+        except subprocess.CalledProcessError as e:
+            log.error(f"Gagal menjalankan 7z: {e}")
 
-            # Kompress lagi dengan zstd 
-            os.system(f"zstd --rm {output_path}")
+    def generate_checksum(self):
+        sha256_hash = hashlib.sha256()
+        try:
+            with open(self.archive_path, "rb") as fw:
+                for chunk in iter(lambda: fw.read(4096), b""):
+                    sha256_hash.update(chunk)
+                self.checksum = sha256_hash.hexdigest()
+                log.success(f"Berhasil membuat checksum SHA256: {
+                            self.checksum}")
+        except Exception as err:
+            log.error(f"Gagal membuat checksum karena: {err}")
 
-            # Tambahkan arsip .zst ke path baru 
-            zst_path = output_path + ".zst"
-
-            # Buat checksum dan simpan checksum
-            checksum = generate_checksum(zst_path)
-            save_checksum_file(zst_path, checksum)
-
-            print_success(f"[✓] SHA-256 Arsip: {checksum}")
-            if verify_checksum(zst_path, checksum):
-                print_success("[✓] Verifikasi checksum berhasil!")
-            else:
-                print_warning("[!] Verifikasi checksum GAGAL!")
-
-            save_state(source_Dir, state_file)
-            print_success("Backup selesasi dan state tersimpan.")
-        except Exception as e:
-            print_error(f"Gagal saat pembuatan arsip karena: {e}")
-
+    def run(self):
+        self.compress()
+        return self.archive_path, self.checksum

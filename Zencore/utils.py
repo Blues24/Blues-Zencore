@@ -1,20 +1,40 @@
-from colorama import Fore, Style, init 
+from colorama import Fore, Style, init
+import pyfiglet
+from tqdm import tqdm
+import sys
+import time
 
-# Memulai colorama
 init(autoreset=True)
 
-# Untuk debug info 
-def print_info(text):
-    print(Fore.CYAN + "[*] " + Style.BRIGHT + text)
+class ConsoleTemplate:
+    @staticmethod
+    def print_info(message):
+        print(f"{Fore.CYAN}[•] {message}{Style.RESET_ALL}")
 
-# Untuk debug proses yang sukses
-def print_success(text):
-    print(Fore.GREEN + "[✓] " + Style.BRIGHT + text)
+    @staticmethod
+    def print_success(message):
+        print(f"{Fore.GREEN}[✓] {message}{Style.RESET_ALL}")
 
-# Untuk debug proses yang error
-def print_error(text):
-    print(Fore.RED + "[!] " + Style.BRIGHT + text)
+    @staticmethod
+    def print_warning(message):
+        print(f"{Fore.YELLOW}[!] {message}{Style.RESET_ALL}")
 
-# Untuk print peringatan
-def print_warning(text):
-    print(Fore.YELLOW + "[!] " + Style.BRIGHT + text)
+    @staticmethod
+    def print_error(message):
+        print(f"{Fore.RED}[X] {message}{Style.RESET_ALL}")
+
+    @staticmethod
+    def show_banner():
+        banner = pyfiglet.figlet_format("Blues Zencore")
+        print(f"{Fore.MAGENTA}{banner}{Style.RESET_ALL}")
+
+    @staticmethod
+    def thank_you():
+        print(f"{Fore.GREEN}Terimakasih telah memakai program ini!{Style.RESET_ALL}")
+
+    @staticmethod
+    def loading_bar(task_name, total_steps):
+        with tqdm(total=total_steps, desc=task_name, bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt}") as bar:
+            for _ in range(total_steps):
+                time.sleep(0.1)  # Simulasi loading
+                bar.update(1)
