@@ -33,8 +33,11 @@ class ConsoleTemplate:
         print(f"{Fore.GREEN}Terimakasih telah memakai program ini!{Style.RESET_ALL}")
 
     @staticmethod
-    def loading_bar(task_name, total_steps):
+    def loading_bar(task_name, iterable):
+        total_steps = len(iterable)  # Pastikan total_steps adalah integer
         with tqdm(total=total_steps, desc=task_name, bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt}") as bar:
-            for _ in range(total_steps):
-                time.sleep(0.1)  # Simulasi loading
+            for item in iterable:
+                yield item
+                time.sleep(0.1)
                 bar.update(1)
+
