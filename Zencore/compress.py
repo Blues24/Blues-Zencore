@@ -14,6 +14,7 @@ class Archiver:
         self.supported_algorithms = ["tar.gz", "tar.zst", "zip"]
         self.archive_path = os.path.join(destination, f"{archive_name}.{self._get_extension()}")  # path disimpan
         self.compress()
+        
      def compress(self):
         archive_path = os.path.join(self.destination, f"{self.archive_name}.{self._get_extension()}")
         ConsoleTemplate.print_info(f"Menggunakan algoritma kompresi: {self.algorithm}")

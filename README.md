@@ -17,7 +17,7 @@ Dibuat untuk pengguna Linux yang ingin menyimpan koleksi musik mereka secara efi
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/namamu/blues-zencore.git
+git clone https://github.com/Blues24/Blues-Zencore.git
 cd blues-zencore
 
 2. Install Dependensi Python

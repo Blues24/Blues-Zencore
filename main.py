@@ -1,6 +1,6 @@
-from Zencore.utils import ConsoleTemplate
-from Zencore.fuzzer import Fuzzer
+from Zencore.utils import ConsoleTemplate 
 from Zencore.compress import Archiver
+from Zencore.fuzzer import Fuzzer
 from Zencore.createPassword import Security, Checker
 from InquirerPy import inquirer
 import argparse
@@ -13,8 +13,8 @@ def get_args():
     return parser.parse_args()
 
 def select_folder_path(name: str, target: str):
-    fuzzer = Fuzzer()
-    all_path = fuzzer. find_target(os.path.expanduser("~"), target)
+    
+    all_path = Fuzzer.find_target_folder(os.path.expanduser("~"), target)
     if not all_path:
         ConsoleTemplate.print_error(f"Sorry, folder not found!")
         sys.exit(1)
@@ -28,8 +28,8 @@ def main():
     ConsoleTemplate.show_banner()
     args = get_args()
 
-    source = args.source if args.source and os.path.isdir(args.source) else select_folder_path("source", "Music")
-    destination = args.destination if args.destination and os.path.isdir(args.destination) else select_folder_path("tujuan", "Backups")
+    source = args.source if args.source and os.path.isdir(args.source) else Fuzzer.fuzzy_select("source", "Music")
+    destination = args.destination if args.destination and os.path.isdir(args.destination) else Fuzzer.fuzzy_select("tujuan", "Backups")
 
     archive_name = inquirer.text(message="📝 Nama arsip backup:").execute()
     algorithm = inquirer.select(
@@ -42,9 +42,9 @@ def main():
     if use_password:
         password = inquirer.secret(message="Masukkan password:").execute()
 
-    # 🔍 FUZZER
-    fuzzer = Fuzzer()
-    file_list = fuzzer.get_all_files(source)
+    # get all file within the target directory
+    
+    file_list = Fuzzer.get_all_files(source)
 
     if not file_list:
         ConsoleTemplate.print_warning("Tidak ada file yang ditemukan untuk dibackup.")

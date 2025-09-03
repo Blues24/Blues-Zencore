@@ -1,0 +1,6 @@
+colorama
+tqdm
+InquirerPy
+pyfiglet
+cryptography
+zstandard
