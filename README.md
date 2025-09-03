@@ -9,8 +9,9 @@ Dibuat untuk pengguna Linux yang ingin menyimpan koleksi musik mereka secara efi
 - 🎛️ CLI interaktif dengan animasi progress bar
 - 📅 Penjadwalan dengan `systemd-timer` (opsional)
 - 💬 Notifikasi CLI berwarna dengan `colorama`
+
 **Sekarang masih belum work di windows karena saya tidak punya windows hehehe**
----
+
 
 ## 📦 Instalasi
 
